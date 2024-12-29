@@ -228,7 +228,7 @@ class CameraInstance:
         )
         await manager.start()
         await manager.set_synchronization_point()
-        global RUNLOOP
+
         while RUNLOOP:
             pullpoint = manager.get_service()
             logging.info("waiting for messages...")
