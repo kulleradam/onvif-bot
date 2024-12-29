@@ -11,7 +11,7 @@ import onvif
 from custom_pullpoint_manager import (
     CustomPullPointManager,
 )  # FIXME: This was modified for Hikvision cameras. It should be generalized.
-from telegram import Bot, Update
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from user_data import config_data
@@ -97,7 +97,6 @@ class VideoStream:
         self.rtsp_url = rtsp_url
 
     async def stream_capture(self):
-        global RUNLOOP
         while RUNLOOP:
             try:
                 rtsp = av.open(
@@ -109,17 +108,17 @@ class VideoStream:
                     },
                 )
                 logging.info("RTSP stream opened successfully.")
-                for i, stream in enumerate(rtsp.streams):
+                for _, stream in enumerate(rtsp.streams):
                     if stream.type == "video":
                         self.codec_name = stream.codec.name
-                for i, packet in enumerate(rtsp.demux()):
+                for _, packet in enumerate(rtsp.demux()):
                     if packet.is_keyframe:
                         self.latest_keyframe = packet
                         await asyncio.sleep(1)
                     if packet.dts is None:
                         continue
                     self.buffer.append(packet)
-                    if RUNLOOP == False:
+                    if RUNLOOP is False:
                         break
 
             except Exception as e:
@@ -197,7 +196,7 @@ class CameraInstance:
         self.rtsp_stream = rtsp_stream
         self.camera_id = camera_id
 
-    def subscription_lost():
+    def subscription_lost(self):
         logging.warning("Subscription lost")
 
     async def run(self):
