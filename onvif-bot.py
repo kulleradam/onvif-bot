@@ -49,7 +49,7 @@ class BotHandler:
 
     async def send_video(self, video: BytesIO):
         bot = self.telegram_bot.bot
-        await bot.send_video(chat_id=self.telegram_channel_id, video=video)
+        await bot.send_video(chat_id=self.telegram_channel_id, video=video, write_timeout=100)
 
     async def send_photo(self, photo: BytesIO):
         bot = self.telegram_bot.bot
@@ -267,14 +267,13 @@ async def main():
     )
     tasks = []
     tasks.append(asyncio.create_task(bot_instance.run()))
-    for id in config_data["cameras"]:
-        rtsp_url = f"rtsp://{config_data['cameras'][id]['username']}:{quote(
-            config_data['cameras'][id]['password'])}@{config_data['cameras'][id]['camera_ip']}:554/stream1"
+    for camera_name, camera_config in config_data["cameras"].items():
+        rtsp_url = f"rtsp://{camera_config['username']}:{quote(camera_config['password'])}@{camera_config['camera_ip']}:554/stream1"
         rtsp_stream = VideoStream(
             bot_instance,
             rtsp_url,
         )
-        cam_instance = CameraInstance(bot_instance, rtsp_stream, id)
+        cam_instance = CameraInstance(bot_instance, rtsp_stream, camera_name)
         # FIXME: If multiple cameras are used, this should be changed.
         bot_instance.rtsp_stream = rtsp_stream
         tasks.append(asyncio.create_task(rtsp_stream.stream_capture()))
