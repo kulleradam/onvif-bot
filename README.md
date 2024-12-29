@@ -1,5 +1,7 @@
 # ONVIF-Bot
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/7e52f88546764858807cd56467cd9cc1)](https://app.codacy.com/gh/kulleradam/onvif-bot?utm_source=github.com&utm_medium=referral&utm_content=kulleradam/onvif-bot&utm_campaign=Badge_Grade)
+
 ONVIF-Bot is a tool that integrates IP cameras with Telegram and Signal bots, enabling real-time video transmission on RTSP motion event triggers. Perfect for security and automation projects, this bot simplifies the process of receiving alerts and videos directly from your IP cameras.  
 **Early stage:** currently supports HiVision IPC-B140H. TP-Link camera support in progress.
 
