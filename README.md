@@ -12,3 +12,7 @@ ONVIF-Bot is a tool that integrates IP cameras with Telegram and Signal bots, en
 - Home security monitoring.
 - Real-time alerts for surveillance.
 - Smart image and video notifications via messaging apps—no subscriptions required.
+
+## Chat commands
+`/grabimage`: Captures an image from the RTSP stream and sends it to the Telegram channel.  
+`/grabvideo`: Captures a video from the RTSP stream and sends it to the Telegram channel.

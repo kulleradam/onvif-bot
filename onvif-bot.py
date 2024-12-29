@@ -11,17 +11,68 @@ import onvif
 from custom_pullpoint_manager import (
     CustomPullPointManager,
 )  # FIXME: This was modified for Hikvision cameras. It should be generalized.
-from telegram import Bot
+from telegram import Bot, Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 from user_data import config_data
 import logging
 
 RUNLOOP = True
-telegram_channel_id = config_data["bots"]["telegram"]["channel_id"]
+
+
+class BotHandler:
+    def __init__(self, token: str, telegram_channel_id: int):
+        self.rtsp_stream = None
+        self.token = token
+        self.telegram_channel_id = telegram_channel_id
+        self.telegram_bot = Application.builder().token(token).build()
+        self.telegram_bot.add_handler(
+            CommandHandler("grabimage", self.grabimage))
+        self.telegram_bot.add_handler(
+            CommandHandler("grabvideo", self.grabvideo))
+
+    async def grabimage(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        if self.rtsp_stream is not None:
+            await self.rtsp_stream.image_snapshot()
+
+    async def grabvideo(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        if self.rtsp_stream is not None:
+            await self.rtsp_stream.video_snapshot()
+
+    async def send_message(self, text: str):
+        bot = self.telegram_bot.bot
+        await bot.send_message(chat_id=self.telegram_channel_id, text=text)
+
+    async def send_video(self, video: BytesIO):
+        bot = self.telegram_bot.bot
+        await bot.send_video(chat_id=self.telegram_channel_id, video=video)
+
+    async def send_photo(self, photo: BytesIO):
+        bot = self.telegram_bot.bot
+        await bot.send_photo(chat_id=self.telegram_channel_id, photo=photo)
+
+    async def run(self):
+        bot = self.telegram_bot.bot
+        bot_info = await bot.get_me()
+        logging.info("Telegram bot name: " + bot_info["username"])
+        await bot.send_message(
+            chat_id=self.telegram_channel_id, text="Starting python node"
+        )
+
+        await self.telegram_bot.initialize()
+        await self.telegram_bot.start()
+        await self.telegram_bot.updater.start_polling()
+
+    async def stop(self):
+        await self.telegram_bot.stop()
 
 
 class VideoStream:
-    def __init__(self, bot: Bot, rtsp_url: str):
+    def __init__(self, bot: BotHandler, rtsp_url: str):
         """
         Initialize the VideoStream instance.
 
@@ -37,7 +88,9 @@ class VideoStream:
         self.video_file = BytesIO()
         self.buffer = deque(
             maxlen=250
-        )  # FIXME: This value depends on FPS which can vary. It should be calculated dynamically.
+            # FIXME: This value depends on FPS which can vary. It should be calculated dynamically.
+        )
+        self.latest_keyframe = None
         self.ostream = None
         self.codec_name = "hevc"
         self.bot = bot
@@ -51,7 +104,8 @@ class VideoStream:
                     self.rtsp_url,
                     options={
                         "rtsp_transport": "tcp",  # Use TCP transport for better reliability
-                        "stimeout": "5000000",  # Timeout in microseconds (e.g., 5 seconds)
+                        # Timeout in microseconds (e.g., 5 seconds)
+                        "stimeout": "5000000",
                     },
                 )
                 logging.info("RTSP stream opened successfully.")
@@ -60,6 +114,7 @@ class VideoStream:
                         self.codec_name = stream.codec.name
                 for i, packet in enumerate(rtsp.demux()):
                     if packet.is_keyframe:
+                        self.latest_keyframe = packet
                         await asyncio.sleep(1)
                     if packet.dts is None:
                         continue
@@ -73,7 +128,17 @@ class VideoStream:
                 )
                 await asyncio.sleep(5)
 
-    async def snapshot(self):
+    async def image_snapshot(self):
+        if self.latest_keyframe is not None:
+            image_file = BytesIO()
+            for frame in self.latest_keyframe.decode():
+                if frame.key_frame:
+                    frame.to_image().save(image_file, format="JPEG")
+                    image_file.seek(0)
+                    await self.bot.send_photo(photo=image_file)
+                    break
+
+    async def video_snapshot(self):
         """
         Capture a snapshot from the video stream and send it to the Telegram bot.
 
@@ -103,13 +168,10 @@ class VideoStream:
                 video_output.mux(packet)
             video_output.close()
             self.video_file.seek(0)
-            await self.bot.send_video(
-                chat_id=telegram_channel_id, video=self.video_file
-            )
+            await self.bot.send_video(video=self.video_file)
 
         else:
             await self.bot.send_message(
-                chat_id=telegram_channel_id,
                 text="Camera is offline or rtsp stream is not available!",
             )
 
@@ -123,7 +185,7 @@ signal.signal(signal.SIGINT, signal_handler)
 
 
 class CameraInstance:
-    def __init__(self, bot: Bot, rtsp_stream: VideoStream, camera_id: int):
+    def __init__(self, bot: BotHandler, rtsp_stream: VideoStream, camera_id: int):
         """
         Initialize the CameraInstance.
 
@@ -181,30 +243,40 @@ class CameraInstance:
                 for cur_message in messages.NotificationMessage:
                     mess_tree = cur_message.Message._value_1.Data.SimpleItem[0].Value
                 if mess_tree == "true":
-                    await self.rtsp_stream.snapshot()
+                    await self.rtsp_stream.video_snapshot()
             except Exception as e:
                 logging.info(f"Exception {e} occurred. Retrying..")
         await manager.shutdown()
-        await self.bot.send_message(
-            chat_id=telegram_channel_id, text="Stopping python node"
-        )
+        await self.bot.send_message(text="Stopping python node")
 
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
-    bot = Bot(token=config_data["bots"]["telegram"]["token"])
-    bot_info = await bot.getMe()
-    logging.info("Telegram bot name: " + bot_info["username"])
-    await bot.send_message(chat_id=telegram_channel_id, text="Starting python node")
+    """
+    Main function to initialize and run the bot and camera instances.
 
+    This function sets up logging, creates an instance of the BotHandler,
+    and initializes tasks for running the bot and handling video streams
+    for each camera defined in the configuration.
+
+    :return: None
+    """
+    logging.basicConfig(level=logging.INFO)
+    bot_instance = BotHandler(
+        config_data["bots"]["telegram"]["token"],
+        config_data["bots"]["telegram"]["channel_id"],
+    )
     tasks = []
+    tasks.append(asyncio.create_task(bot_instance.run()))
     for id in config_data["cameras"]:
-        rtsp_url = f"rtsp://{config_data['cameras'][id]['username']}:{quote(config_data['cameras'][id]['password'])}@{config_data['cameras'][id]['camera_ip']}:554/stream1"
+        rtsp_url = f"rtsp://{config_data['cameras'][id]['username']}:{quote(
+            config_data['cameras'][id]['password'])}@{config_data['cameras'][id]['camera_ip']}:554/stream1"
         rtsp_stream = VideoStream(
-            bot,
+            bot_instance,
             rtsp_url,
         )
-        cam_instance = CameraInstance(bot, rtsp_stream, id)
+        cam_instance = CameraInstance(bot_instance, rtsp_stream, id)
+        # FIXME: If multiple cameras are used, this should be changed.
+        bot_instance.rtsp_stream = rtsp_stream
         tasks.append(asyncio.create_task(rtsp_stream.stream_capture()))
         tasks.append(asyncio.create_task(cam_instance.run()))
     await asyncio.gather(*tasks)
