@@ -17,10 +17,57 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from user_data import config_data
 import logging
 
+from slack_sdk.web.async_client import AsyncWebClient
+
 RUNLOOP = True
 
 
 class BotHandler:
+    def __init__(self, token: str, channel_id: str):
+        self.token = token
+        self.channel_id = channel_id
+
+    async def send_message(self, text: str):
+        pass
+
+    async def send_video(self, video: BytesIO):
+        pass
+
+    async def send_photo(self, photo: BytesIO):
+        pass
+
+    async def run(self):
+        pass
+
+    async def stop(self):
+        pass
+
+
+class SlackBot(BotHandler):
+    def __init__(self, token: str, slack_channel_id: str):
+        self.token = token
+        self.slack_channel_id = slack_channel_id
+        self.slack_bot = AsyncWebClient(token=token)
+
+    async def send_message(self, text: str):
+        await self.slack_bot.chat_postMessage(channel=self.slack_channel_id, text=text)
+
+    async def send_video(self, video: BytesIO):
+        await self.upload_file(file=video, title="Video")
+
+    async def send_photo(self, photo: BytesIO):
+        await self.upload_file(file=photo, title="Photo")
+
+    async def upload_file(self, file: BytesIO, title: str):
+        await self.slack_bot.files_upload_v2(channel=self.slack_channel_id, file=file, title=title)
+
+    async def run(self):
+        bot_name = await self.slack_bot.auth_test()
+        logging.info("Slack bot name: " + bot_name["user"])
+        await self.slack_bot.chat_postMessage(channel=self.slack_channel_id, text="Starting python node")
+
+
+class TelegramBot(BotHandler):
     def __init__(self, token: str, telegram_channel_id: int):
         self.rtsp_stream = None
         self.token = token
@@ -85,7 +132,6 @@ class VideoStream:
             bot (Bot): The Telegram bot instance.
             rtsp_url (str): The RTSP URL of the video stream.
         """
-        self.video_file = BytesIO()
         self.buffer = deque(
             maxlen=250
             # FIXME: This value depends on FPS which can vary. It should be calculated dynamically.
@@ -95,6 +141,7 @@ class VideoStream:
         self.codec_name = "hevc"
         self.bot = bot
         self.rtsp_url = rtsp_url
+        self.video_in_progress = False
 
     async def stream_capture(self):
         while RUNLOOP:
@@ -146,8 +193,12 @@ class VideoStream:
         is empty, it sends a message indicating that the camera is offline or the RTSP
         stream is not available.
         """
-        await asyncio.sleep(6)  # Wait to record post-trigger video
-        video_output = av.open(self.video_file, mode="w", format="mp4")
+        if self.video_in_progress is True:
+            return  # Do not start a new video capture if one is already in progress
+        # FIXME: Wait to record post-trigger video, should be calculated dynamically from FPS
+        await asyncio.sleep(6)
+        video_file = BytesIO()
+        video_output = av.open(video_file, mode="w", format="mp4")
         ostream = video_output.add_stream(codec_name=self.codec_name)
         if self.buffer:
             pts_ref = 0
@@ -166,9 +217,9 @@ class VideoStream:
                 packet.stream = ostream
                 video_output.mux(packet)
             video_output.close()
-            self.video_file.seek(0)
-            await self.bot.send_video(video=self.video_file)
-
+            video_file.seek(0)
+            await self.bot.send_video(video=video_file)
+            self.video_in_progress = False
         else:
             await self.bot.send_message(
                 text="Camera is offline or rtsp stream is not available!",
@@ -260,23 +311,39 @@ async def main():
     :return: None
     """
     logging.basicConfig(level=logging.INFO)
-    bot_instance = BotHandler(
-        config_data["bots"]["telegram"]["token"],
-        config_data["bots"]["telegram"]["channel_id"],
-    )
+
     tasks = []
-    tasks.append(asyncio.create_task(bot_instance.run()))
+    bots = {}
+
+    for bot in config_data["bots"]:
+        if bot == "telegram":
+            bot_instance = TelegramBot(
+                config_data["bots"][bot]["token"],
+                config_data["bots"][bot]["channel_id"],
+            )
+        elif bot == "slack":
+            bot_instance = SlackBot(
+                config_data["bots"][bot]["token"],
+                config_data["bots"][bot]["channel_id"],
+            )
+        bots[bot] = bot_instance
+        tasks.append(asyncio.create_task(bot_instance.run()))
+
     for camera_name, camera_config in config_data["cameras"].items():
-        rtsp_url = f"rtsp://{camera_config['username']}:{quote(camera_config['password'])}@{camera_config['camera_ip']}:554/stream1"
-        rtsp_stream = VideoStream(
-            bot_instance,
-            rtsp_url,
-        )
-        cam_instance = CameraInstance(bot_instance, rtsp_stream, camera_name)
-        # FIXME: If multiple cameras are used, this should be changed.
-        bot_instance.rtsp_stream = rtsp_stream
-        tasks.append(asyncio.create_task(rtsp_stream.stream_capture()))
-        tasks.append(asyncio.create_task(cam_instance.run()))
+        rtsp_url = f"""rtsp://{camera_config['username']}:{
+            quote(camera_config['password'])}@{camera_config['camera_ip']}:554/stream1"""
+        if camera_config["bot"] in bots:
+            bot_instance = bots[camera_config["bot"]]
+            rtsp_stream = VideoStream(
+                bot_instance,
+                rtsp_url,
+            )
+            cam_instance = CameraInstance(
+                bot_instance, rtsp_stream, camera_name)
+            # FIXME: If multiple cameras are used, this should be changed. bot_instance needs this to actively trigger a snapshot.
+            bot_instance.rtsp_stream = rtsp_stream
+            tasks.append(asyncio.create_task(rtsp_stream.stream_capture()))
+            tasks.append(asyncio.create_task(cam_instance.run()))
     await asyncio.gather(*tasks)
 
 
