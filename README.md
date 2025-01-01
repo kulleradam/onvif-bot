@@ -30,7 +30,7 @@ Creating a bot for Telegram or Slack is simple and well-documented. Follow the o
 
   > **Required Slack OAuth Permissions:**
   >
-  > `chat:write`: Allows the bot to send messages in channels or DMs.
+  > `chat:write`: Allows the bot to send messages in channels or DMs.  
   > `files:write`: Enables the bot to upload and share files.
 
 ## Configuration Example
