@@ -67,3 +67,9 @@ config_data = {
     }
 }
 ```
+
+## Screenshots
+
+|                       Telegram                        |                       Slack                        |
+| :---------------------------------------------------: | :------------------------------------------------: |
+| ![](./assets/Screenshot_20250101_112323_Telegram.jpg) | ![](./assets/Screenshot_20250101_111214_Slack.jpg) |
