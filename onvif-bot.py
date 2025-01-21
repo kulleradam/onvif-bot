@@ -196,18 +196,24 @@ class VideoStream:
         """
         Captures a video snapshot from the current video stream buffer.
 
-        This method captures a video snapshot from the current video stream buffer and returns it as a BytesIO object containing the video in MP4 format. If a video capture is already in progress, the method will return immediately without starting a new capture.
+        This method captures a video snapshot from the current video stream 
+        buffer and returns it as a BytesIO object containing the video in MP4 
+        format. If a video capture is already in progress, the method will 
+        return immediately without starting a new capture.
 
         Returns:
-            BytesIO: A BytesIO object containing the captured video in MP4 format, or None if no video was captured.
+            BytesIO: A BytesIO object containing the captured video in MP4 
+            format, or None if no video was captured.
 
         Raises:
             Exception: If an error occurs during the muxing of video packets.
 
         Notes:
             - The method waits for 10 seconds before starting the video capture.
-            - The video capture process is skipped if there is no keyframe in the buffer.
-            - The method sets `self.video_in_progress` to True at the start and False at the end to prevent concurrent captures.
+            - The video capture process is skipped if there is no keyframe in 
+            the buffer.
+            - The method sets `self.video_in_progress` to True at the start and 
+            False at the end to prevent concurrent captures.
         """
         if self.video_in_progress is True:
             return  # Do not start a new video capture if one is already in progress
@@ -319,8 +325,8 @@ class CameraInstance:
                     mess_tree = cur_message.Message._value_1.Data.SimpleItem[0].Value
                 if mess_tree == "true":
                     await self.bot.send_message(
-                        f"Motion detected on camera {self.camera_id} at {
-                            time.strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"""Motion detected on camera {self.camera_id} at {
+                            time.strftime('%Y-%m-%d %H:%M:%S')}"""
                     )
                     if self.rtsp_stream is not None:
                         await self.bot.send_video(await self.rtsp_stream.video_snapshot())
