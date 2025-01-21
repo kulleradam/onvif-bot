@@ -1,11 +1,12 @@
 import asyncio
 import signal
-from collections import deque
+from queue import Queue
 from datetime import timedelta
+import time
 from io import BytesIO
 from os import path
 from urllib.parse import quote
-
+import threading
 import av
 import onvif
 from custom_pullpoint_manager import (
@@ -138,17 +139,16 @@ class VideoStream:
             bot (Bot): The Telegram bot instance.
             rtsp_url (str): The RTSP URL of the video stream.
         """
-        self.buffer = deque[av.Packet](
-            maxlen=250
-            # FIXME: This value depends on FPS which can vary. It should be calculated dynamically.
-        )
+        self.buffer = Queue[av.Packet]()
         self.latest_keyframe = None
         self.ostream = None
         self.in_stream = None
         self.rtsp_url = rtsp_url
         self.video_in_progress = False
+        self.video_thread = threading.Thread(
+            target=self.stream_capture).start()
 
-    async def stream_capture(self):
+    def stream_capture(self):
         while RUNLOOP:
             try:
                 rtsp = av.open(
@@ -159,15 +159,20 @@ class VideoStream:
                         "stimeout": "5000000",
                     },
                 )
-                logging.info("RTSP stream opened successfully.")
+                fps = rtsp.streams.video[0].average_rate
+                queue_size = 200  # Default queue size
+                if fps > 0 and fps < 40:
+                    # Keep the last 5 seconds of video
+                    queue_size = int(fps * 5)
                 self.in_stream = rtsp.streams.video[0]
                 for packet in rtsp.demux(self.in_stream):
+                    while self.buffer.qsize() >= queue_size and self.video_in_progress is False:
+                        self.buffer.get()
                     if packet.dts is None:
                         continue
                     if packet.is_keyframe:
                         self.latest_keyframe = packet
-                        await asyncio.sleep(1)
-                    self.buffer.append(packet)
+                    self.buffer.put(packet)
                     if RUNLOOP is False:
                         break
 
@@ -175,7 +180,7 @@ class VideoStream:
                 logging.warning(
                     f"Error accessing RTSP stream: {e}, retrying in 5 seconds"
                 )
-                await asyncio.sleep(5)
+                time.sleep(5)
 
     def image_snapshot(self):
         if self.latest_keyframe is not None:
@@ -189,25 +194,36 @@ class VideoStream:
 
     async def video_snapshot(self):
         """
-        Capture a snapshot from the video stream and send it to the Telegram bot.
+        Captures a video snapshot from the current video stream buffer.
 
-        This method captures a snapshot from the video stream, stores it in a buffer,
-        and sends it as a video file to the specified Telegram channel. If the buffer
-        is empty, it sends a message indicating that the camera is offline or the RTSP
-        stream is not available.
+        This method captures a video snapshot from the current video stream buffer and returns it as a BytesIO object containing the video in MP4 format. If a video capture is already in progress, the method will return immediately without starting a new capture.
+
+        Returns:
+            BytesIO: A BytesIO object containing the captured video in MP4 format, or None if no video was captured.
+
+        Raises:
+            Exception: If an error occurs during the muxing of video packets.
+
+        Notes:
+            - The method waits for 10 seconds before starting the video capture.
+            - The video capture process is skipped if there is no keyframe in the buffer.
+            - The method sets `self.video_in_progress` to True at the start and False at the end to prevent concurrent captures.
         """
         if self.video_in_progress is True:
             return  # Do not start a new video capture if one is already in progress
         # FIXME: Wait to record post-trigger video, should be calculated dynamically from FPS
-        await asyncio.sleep(6)
+        self.video_in_progress = True
+        await asyncio.sleep(10)
         video_file = BytesIO()
         video_output = av.open(video_file, mode="w", format="mp4")
-        ostream = video_output.add_stream_from_template(template=self.in_stream)
+        ostream = video_output.add_stream_from_template(
+            template=self.in_stream)
         logging.info("Codec name: " + self.in_stream.codec.name)
+        video_snapshot = None
         if self.buffer:
             pts_ref = 0
             first_packet = True
-            for packet in self.buffer:
+            for packet in list(self.buffer.queue):
                 if first_packet:
                     if packet.is_keyframe:
                         first_packet = False
@@ -223,13 +239,12 @@ class VideoStream:
                     logging.warning(f"Error muxing packet: {e}")
             video_output.close()
             video_file.seek(0)
-            #with open("output.mp4", "wb") as f:
+            # with open("output.mp4", "wb") as f:
             #    f.write(video_file.getbuffer())
             #    return None
-            self.video_in_progress = False
-            return video_file
-        else:
-            return None
+            video_snapshot = video_file
+        self.video_in_progress = False
+        return video_snapshot
 
 
 def signal_handler(signal, frame):
@@ -304,19 +319,14 @@ class CameraInstance:
                     mess_tree = cur_message.Message._value_1.Data.SimpleItem[0].Value
                 if mess_tree == "true":
                     await self.bot.send_message(
-                        f"Motion detected on camera {self.camera_id}"
+                        f"Motion detected on camera {self.camera_id} at {
+                            time.strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     if self.rtsp_stream is not None:
                         await self.bot.send_video(await self.rtsp_stream.video_snapshot())
             except Exception as e:
                 logging.info(f"Exception {e} occurred. Retrying..")
         await manager.shutdown()
-
-    async def start_streaming(self):
-        if self.rtsp_stream is not None:
-            await self.rtsp_stream.stream_capture()
-        else:
-            logging.info("No media stream for camera " + self.camera_id)
 
 
 async def main():
@@ -355,7 +365,6 @@ async def main():
             bot_instance = bots[camera_config["bot"]]
             cam_instance = CameraInstance(
                 bot_instance, camera_name, rtsp_url)
-            tasks.append(asyncio.create_task(cam_instance.start_streaming()))
             tasks.append(asyncio.create_task(cam_instance.run()))
     await asyncio.gather(*tasks)
 
