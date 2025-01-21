@@ -145,8 +145,8 @@ class VideoStream:
         self.in_stream = None
         self.rtsp_url = rtsp_url
         self.video_in_progress = False
-        self.video_thread = threading.Thread(
-            target=self.stream_capture).start()
+        self.video_thread = threading.Thread(target=self.stream_capture)
+        self.video_thread.start()
 
     def stream_capture(self):
         while RUNLOOP:
