@@ -1,7 +1,14 @@
 # ONVIF-Bot
 
-ONVIF-Bot is a tool that integrates IP cameras with Telegram and Slack bots, enabling real-time video transmission on RTSP motion event triggers. Perfect for security and automation projects, this bot simplifies the process of receiving alerts and videos directly from your IP cameras.  
-**Early stage:** currently supports HiVision IPC-B140H. TP-Link camera support in progress.
+ONVIF-Bot is a tool that integrates IP cameras with Telegram and Slack bots, enabling real-time video transmission on RTSP motion event triggers. Perfect for security and automation projects, this bot simplifies the process of receiving alerts and videos directly from your IP cameras.
+
+## Tested Devices
+
+ONVIF-Bot has been tested and verified with the following IP cameras:
+
+- Hikvision IPC-B140H
+- TP-Link Tapo C320WS
+- TP-Link Tapo C200
 
 ## Features
 
@@ -45,6 +52,7 @@ config_data = {
             "password": "<camera_password>",
             "camera_ip": "<camera_ip_address>",
             "camera_onvif_port": <camera_onvif_port>,
+            "nomedia": False, # If true, only alert will be sent, no video
             "bot": "telegram", # Bot name must match with one of the bots in "bots" below
         },
         "TPLink_C320WS_slack": { # Camera name
@@ -52,6 +60,7 @@ config_data = {
             "password": "<camera_password>",
             "camera_ip": "<camera_ip_address>",
             "camera_onvif_port": <camera_onvif_port>,
+            "nomedia": False, # If true, only alert will be sent, no video
             "bot": "slack",  # Bot name must match with one of the bots in "bots" below
         },
     },
