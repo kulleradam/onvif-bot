@@ -19,32 +19,8 @@ from user_data import config_data
 import logging
 from slack_sdk.web.async_client import AsyncWebClient
 
-RUNLOOP = True
 
-
-class BotHandler:
-    def __init__(self, token: str, channel_id: str):
-        self.token = token
-        self.channel_id = channel_id
-        self.rtsp_streams = []
-
-    async def send_message(self, text: str):
-        pass
-
-    async def send_video(self, video: BytesIO):
-        pass
-
-    async def send_photo(self, photo: BytesIO):
-        pass
-
-    async def run(self):
-        pass
-
-    async def stop(self):
-        pass
-
-
-class SlackBot(BotHandler):
+class SlackBot:
     def __init__(self, token: str, slack_channel_id: str):
         self.token = token
         self.slack_channel_id = slack_channel_id
@@ -61,25 +37,30 @@ class SlackBot(BotHandler):
         await self.upload_file(file=photo, title="Photo")
 
     async def upload_file(self, file: BytesIO, title: str):
-        await self.slack_bot.files_upload_v2(channel=self.slack_channel_id, file=file, title=title)
+        await self.slack_bot.files_upload_v2(
+            channel=self.slack_channel_id, file=file, title=title
+        )
 
     async def run(self):
         bot_name = await self.slack_bot.auth_test()
         logging.info("Slack bot name: " + bot_name["user"])
-        await self.slack_bot.chat_postMessage(channel=self.slack_channel_id, text="Starting python node")
+        await self.slack_bot.chat_postMessage(
+            channel=self.slack_channel_id, text="Starting python node"
+        )
+
+    async def stop(self):
+        pass
 
 
-class TelegramBot(BotHandler):
+class TelegramBot:
     def __init__(self, token: str, telegram_channel_id: int):
         self.rtsp_stream = None
         self.token = token
         self.telegram_channel_id = telegram_channel_id
         self.rtsp_streams = []
         self.telegram_bot = Application.builder().token(token).build()
-        self.telegram_bot.add_handler(
-            CommandHandler("grabimage", self.grabimage))
-        self.telegram_bot.add_handler(
-            CommandHandler("grabvideo", self.grabvideo))
+        self.telegram_bot.add_handler(CommandHandler("grabimage", self.grabimage))
+        self.telegram_bot.add_handler(CommandHandler("grabvideo", self.grabvideo))
 
     async def grabimage(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -103,7 +84,9 @@ class TelegramBot(BotHandler):
 
     async def send_video(self, video: BytesIO):
         bot = self.telegram_bot.bot
-        await bot.send_video(chat_id=self.telegram_channel_id, video=video, write_timeout=100)
+        await bot.send_video(
+            chat_id=self.telegram_channel_id, video=video, write_timeout=100
+        )
 
     async def send_photo(self, photo: BytesIO):
         bot = self.telegram_bot.bot
@@ -122,7 +105,8 @@ class TelegramBot(BotHandler):
         await self.telegram_bot.updater.start_polling()
 
     async def stop(self):
-        await self.telegram_bot.stop()
+        await self.telegram_bot.updater.stop()
+        self.telegram_bot.updater.is_idle = False
 
 
 class VideoStream:
@@ -139,17 +123,18 @@ class VideoStream:
             bot (Bot): The Telegram bot instance.
             rtsp_url (str): The RTSP URL of the video stream.
         """
-        self.buffer = Queue[av.Packet]()
+        self.buffer = Queue()
         self.latest_keyframe = None
         self.ostream = None
         self.in_stream = None
         self.rtsp_url = rtsp_url
         self.video_in_progress = False
-        self.video_thread = threading.Thread(target=self.stream_capture)
+        self.stop_event = threading.Event()
+        self.video_thread = threading.Thread(target=self.stream_capture, daemon=True)
         self.video_thread.start()
 
     def stream_capture(self):
-        while RUNLOOP:
+        while not self.stop_event.is_set():
             try:
                 rtsp = av.open(
                     self.rtsp_url,
@@ -166,14 +151,17 @@ class VideoStream:
                     queue_size = int(fps * 5)
                 self.in_stream = rtsp.streams.video[0]
                 for packet in rtsp.demux(self.in_stream):
-                    while self.buffer.qsize() >= queue_size and self.video_in_progress is False:
+                    while (
+                        self.buffer.qsize() >= queue_size
+                        and self.video_in_progress is False
+                    ):
                         self.buffer.get()
                     if packet.dts is None:
                         continue
                     if packet.is_keyframe:
                         self.latest_keyframe = packet
                     self.buffer.put(packet)
-                    if RUNLOOP is False:
+                    if self.stop_event.is_set():
                         break
 
             except Exception as e:
@@ -196,13 +184,13 @@ class VideoStream:
         """
         Captures a video snapshot from the current video stream buffer.
 
-        This method captures a video snapshot from the current video stream 
-        buffer and returns it as a BytesIO object containing the video in MP4 
-        format. If a video capture is already in progress, the method will 
+        This method captures a video snapshot from the current video stream
+        buffer and returns it as a BytesIO object containing the video in MP4
+        format. If a video capture is already in progress, the method will
         return immediately without starting a new capture.
 
         Returns:
-            BytesIO: A BytesIO object containing the captured video in MP4 
+            BytesIO: A BytesIO object containing the captured video in MP4
             format, or None if no video was captured.
 
         Raises:
@@ -210,9 +198,9 @@ class VideoStream:
 
         Notes:
             - The method waits for 10 seconds before starting the video capture.
-            - The video capture process is skipped if there is no keyframe in 
+            - The video capture process is skipped if there is no keyframe in
             the buffer.
-            - The method sets `self.video_in_progress` to True at the start and 
+            - The method sets `self.video_in_progress` to True at the start and
             False at the end to prevent concurrent captures.
         """
         if self.video_in_progress is True:
@@ -222,8 +210,7 @@ class VideoStream:
         await asyncio.sleep(10)
         video_file = BytesIO()
         video_output = av.open(video_file, mode="w", format="mp4")
-        ostream = video_output.add_stream_from_template(
-            template=self.in_stream)
+        ostream = video_output.add_stream_from_template(template=self.in_stream)
         logging.info("Codec name: " + self.in_stream.codec.name)
         video_snapshot = None
         if self.buffer:
@@ -252,17 +239,13 @@ class VideoStream:
         self.video_in_progress = False
         return video_snapshot
 
-
-def signal_handler(signal, frame):
-    global RUNLOOP
-    RUNLOOP = False
-
-
-signal.signal(signal.SIGINT, signal_handler)
+    def stop(self):
+        self.stop_event.set()
+        self.video_thread.join()
 
 
 class CameraInstance:
-    def __init__(self, bot: BotHandler, camera_id: int, rtsp_url: str):
+    def __init__(self, bot, camera_id: int, rtsp_url: str):
         """
         Initialize the CameraInstance.
 
@@ -273,6 +256,7 @@ class CameraInstance:
         self.bot = bot
         self.camera_id = camera_id
         self.rtsp_stream = None
+        self.stop_event = asyncio.Event()
         if config_data["cameras"][camera_id]["nomedia"] is False:
             self.rtsp_stream = VideoStream(rtsp_url)
             bot.rtsp_streams.append(self.rtsp_stream)
@@ -310,7 +294,7 @@ class CameraInstance:
         await manager.start()
         await manager.set_synchronization_point()
 
-        while RUNLOOP:
+        while not self.stop_event.is_set():
             pullpoint = manager.get_service()
             logging.info("waiting for messages...")
             try:
@@ -329,17 +313,25 @@ class CameraInstance:
                             time.strftime('%Y-%m-%d %H:%M:%S')}"""
                     )
                     if self.rtsp_stream is not None:
-                        await self.bot.send_video(await self.rtsp_stream.video_snapshot())
+                        await self.bot.send_video(
+                            await self.rtsp_stream.video_snapshot()
+                        )
+            except asyncio.CancelledError:
+                logging.info(f"Stopping camera {self.camera_id}")
+                self.stop_event.set()
+                if self.rtsp_stream is not None:
+                    logging.info("Stopping video stream")
+                    self.rtsp_stream.stop()
+                await manager.shutdown()
             except Exception as e:
                 logging.info(f"Exception {e} occurred. Retrying..")
-        await manager.shutdown()
 
 
 async def main():
     """
     Main function to initialize and run the bot and camera instances.
 
-    This function sets up logging, creates an instance of the BotHandler,
+    This function sets up logging, creates an instance of the Bot,
     and initializes tasks for running the bot and handling video streams
     for each camera defined in the configuration.
 
@@ -347,8 +339,9 @@ async def main():
     """
     logging.basicConfig(level=logging.INFO)
 
-    tasks = []
     bots = {}
+    camera_instances = {}
+    tasks = []
 
     for bot in config_data["bots"]:
         if bot == "telegram":
@@ -369,11 +362,37 @@ async def main():
             quote(camera_config['password'])}@{camera_config['camera_ip']}:554/stream1"""
         if camera_config["bot"] in bots:
             bot_instance = bots[camera_config["bot"]]
-            cam_instance = CameraInstance(
-                bot_instance, camera_name, rtsp_url)
+            cam_instance = CameraInstance(bot_instance, camera_name, rtsp_url)
+            camera_instances[camera_name] = cam_instance
             tasks.append(asyncio.create_task(cam_instance.run()))
-    await asyncio.gather(*tasks)
+    try:
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        pass
+
+
+def shutdown_handler(loop):
+    print("\nShutting down gracefully...")
+    for task in asyncio.all_tasks(loop):
+        task.cancel()  # Cancel asyncio tasks
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Signal handling for graceful shutdown
+    signal.signal(signal.SIGINT, lambda sig, frame: shutdown_handler(loop))
+
+    try:
+        loop.run_until_complete(main())
+    except asyncio.CancelledError:
+        pass
+    finally:
+        # Cancel all running tasks and close the loop
+        tasks = asyncio.all_tasks(loop)
+        for task in tasks:
+            task.cancel()
+        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+        loop.close()
+        print("Shutdown complete.")
