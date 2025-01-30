@@ -15,9 +15,11 @@ from custom_pullpoint_manager import (
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from user_data import config_data
 import logging
 from slack_sdk.web.async_client import AsyncWebClient
+import yaml
+
+config_data = {}
 
 
 class SlackBot:
@@ -378,6 +380,16 @@ def shutdown_handler(loop):
 
 
 if __name__ == "__main__":
+    # Load configuration from user_data.yaml
+    try:
+        with open("user_data.yaml") as file:
+            config_data = yaml.safe_load(file)
+    except FileNotFoundError:
+        print(
+            """Error: 'user_data.yaml' file not found. Please refer to the 
+            README for configuration instructions."""
+        )
+        exit(1)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 

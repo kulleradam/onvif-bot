@@ -42,39 +42,33 @@ Creating a bot for Telegram or Slack is simple and well-documented. Follow the o
 
 ## Configuration Example
 
-Below is an example configuration structure for ONVIF-Bot (`user_data.py`):
+Below is an example configuration structure for ONVIF-Bot (`user_data.yaml`):
 
-```python
-config_data = {
-    "cameras": { # You can add multiple cameras
-        "Hikvision_IPCB140h_telegram": { # Camera name
-            "username": "<camera_username>",
-            "password": "<camera_password>",
-            "camera_ip": "<camera_ip_address>",
-            "camera_onvif_port": <camera_onvif_port>,
-            "nomedia": False, # If true, only alert will be sent, no video
-            "bot": "telegram", # Bot name must match with one of the bots in "bots" below
-        },
-        "TPLink_C320WS_slack": { # Camera name
-            "username": "<camera_username>",
-            "password": "<camera_password>",
-            "camera_ip": "<camera_ip_address>",
-            "camera_onvif_port": <camera_onvif_port>,
-            "nomedia": False, # If true, only alert will be sent, no video
-            "bot": "slack",  # Bot name must match with one of the bots in "bots" below
-        },
-    },
-    "bots": {
-        "telegram": {
-            "token": "<telegram_bot_token>",
-            "channel_id": "<telegram_channel_id>",
-        },
-        "slack": {
-            "token": "xoxb-********", #Bot User OAuth Token
-            "channel_id": "<channel_id>",
-        },
-    }
-}
+```yaml
+cameras:
+  # You can add multiple cameras
+  Hikvision_IPCB140h_telegram:  # Camera name
+    username: "camera_username"
+    password: "camera_password"
+    camera_ip: "camera_ip_address"
+    camera_onvif_port: camera_onvif_port
+    nomedia: False  # If true, only alert will be sent, no video
+    bot: "telegram"  # Bot name must match with one of the bots in "bots" below
+  TPLink_C320WS_slack:  # Camera name
+    username: "camera_username"
+    password: "camera_password"
+    camera_ip: "camera_ip_address"
+    camera_onvif_port: camera_onvif_port
+    nomedia: False  # If true, only alert will be sent, no video
+    bot: "slack"  # Bot name must match with one of the bots in "bots" below
+
+bots:
+  telegram:
+    token: "telegram_bot_token"
+    channel_id: "telegram_channel_id"
+  #slack:
+  #  token: "xoxb-********"  # Bot User OAuth Token
+  #  channel_id: "channel_id"
 ```
 
 ## Screenshots
@@ -82,3 +76,13 @@ config_data = {
 |                              Telegram                              |                            Slack                             |
 | :----------------------------------------------------------------: | :----------------------------------------------------------: |
 | ![Telegram demo](./assets/Screenshot_20250101_112323_Telegram.jpg) | ![Slack demo](./assets/Screenshot_20250101_111214_Slack.jpg) |
+
+## Contributing
+
+Contributions to ONVIF-Bot are welcome and appreciated! Here's how you can help:
+
+1. Fork the repository and clone it locally.
+2. Create a new branch for your contribution:
+   ```sh
+   git checkout -b feature/your-feature-name
+   ```
