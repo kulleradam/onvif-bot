@@ -384,7 +384,7 @@ if __name__ == "__main__":
     try:
         with open("user_data.yaml") as file:
             config_data = yaml.safe_load(file)
-    except:
+    except FileNotFoundError:
         print(
             """Error: 'user_data.yaml' file not found. Please refer to the 
             README for configuration instructions."""
