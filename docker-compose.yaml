@@ -1,0 +1,8 @@
+services:
+  onvif-bot:
+    build: .
+    volumes:
+      - ${PWD}/onvif-bot.py:/app/onvif-bot.py
+      - ${PWD}/user_data.yaml:/app/user_data.yaml
+      - ${PWD}/custom_pullpoint_manager.py:/app/custom_pullpoint_manager.py
+    network_mode: host  # Use host network mode
