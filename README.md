@@ -10,6 +10,32 @@ ONVIF-Bot has been tested and verified with the following IP cameras:
 - TP-Link Tapo C320WS
 - TP-Link Tapo C200
 
+## Running onvif-bot
+
+For both solution add at least one configuration to `user_data.yaml` file.
+
+### Without Docker Compose
+
+1. **Install dependencies**
+
+```sh
+pip install -r requirements.txt
+```
+
+2. **Run the bot**
+
+```sh
+python onvif-bot.py
+```
+
+### With Docker Compose
+
+1. **Start the service**
+
+```sh
+docker compose up -d
+```
+
 ## Features
 
 - Motion Detection: Responds to ONVIF-compatible motion events from IP cameras.
@@ -47,20 +73,20 @@ Below is an example configuration structure for ONVIF-Bot (`user_data.yaml`):
 ```yaml
 cameras:
   # You can add multiple cameras
-  Hikvision_IPCB140h_telegram:  # Camera name
+  Hikvision_IPCB140h_telegram: # Camera name
     username: "camera_username"
     password: "camera_password"
     camera_ip: "camera_ip_address"
     camera_onvif_port: camera_onvif_port
-    nomedia: False  # If true, only alert will be sent, no video
-    bot: "telegram"  # Bot name must match with one of the bots in "bots" below
-  TPLink_C320WS_slack:  # Camera name
+    nomedia: False # If true, only alert will be sent, no video
+    bot: "telegram" # Bot name must match with one of the bots in "bots" below
+  TPLink_C320WS_slack: # Camera name
     username: "camera_username"
     password: "camera_password"
     camera_ip: "camera_ip_address"
     camera_onvif_port: camera_onvif_port
-    nomedia: False  # If true, only alert will be sent, no video
-    bot: "slack"  # Bot name must match with one of the bots in "bots" below
+    nomedia: False # If true, only alert will be sent, no video
+    bot: "slack" # Bot name must match with one of the bots in "bots" below
 
 bots:
   telegram:

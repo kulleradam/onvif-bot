@@ -382,7 +382,7 @@ def shutdown_handler(loop):
 if __name__ == "__main__":
     # Load configuration from user_data.yaml
     try:
-        with open("user_data.yaml") as file:
+        with open(path.join(path.dirname(__file__), "user_data.yaml")) as file:
             config_data = yaml.safe_load(file)
     except FileNotFoundError:
         print(

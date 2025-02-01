@@ -1,6 +1,7 @@
-onvif-async==0.0.1
+onvif-zeep-async==3.1.13
 av==14.1.0
 python_telegram_bot==21.10
 pyyaml==6.0.2
 slack_sdk==3.34.0
 aiohttp==3.11.11
+pillow==11.0.0
