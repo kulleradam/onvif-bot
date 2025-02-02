@@ -424,8 +424,8 @@ if __name__ == "__main__":
             for name, camera_data in config_data["cameras"].items()
         }
         logging.info(
-            f"Configuration validated successfully for {len(cam_cfg)} cameras and {
-                len(bot_cfg)} bots."
+            f"""Configuration validated successfully for {len(cam_cfg)} cameras and {
+                len(bot_cfg)} bots."""
         )
 
     except FileNotFoundError:
