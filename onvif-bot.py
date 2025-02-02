@@ -18,8 +18,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import logging
 from slack_sdk.web.async_client import AsyncWebClient
 import yaml
+from pydantic import BaseModel, Field
 
-config_data = {}
+bot_cfg = {}
+cam_cfg = {}
 
 
 class SlackBot:
@@ -61,8 +63,10 @@ class TelegramBot:
         self.telegram_channel_id = telegram_channel_id
         self.rtsp_streams = []
         self.telegram_bot = Application.builder().token(token).build()
-        self.telegram_bot.add_handler(CommandHandler("grabimage", self.grabimage))
-        self.telegram_bot.add_handler(CommandHandler("grabvideo", self.grabvideo))
+        self.telegram_bot.add_handler(
+            CommandHandler("grabimage", self.grabimage))
+        self.telegram_bot.add_handler(
+            CommandHandler("grabvideo", self.grabvideo))
 
     async def grabimage(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -132,7 +136,8 @@ class VideoStream:
         self.rtsp_url = rtsp_url
         self.video_in_progress = False
         self.stop_event = threading.Event()
-        self.video_thread = threading.Thread(target=self.stream_capture, daemon=True)
+        self.video_thread = threading.Thread(
+            target=self.stream_capture, daemon=True)
         self.video_thread.start()
 
     def stream_capture(self):
@@ -212,7 +217,8 @@ class VideoStream:
         await asyncio.sleep(10)
         video_file = BytesIO()
         video_output = av.open(video_file, mode="w", format="mp4")
-        ostream = video_output.add_stream_from_template(template=self.in_stream)
+        ostream = video_output.add_stream_from_template(
+            template=self.in_stream)
         logging.info("Codec name: " + self.in_stream.codec.name)
         video_snapshot = None
         if self.buffer:
@@ -259,7 +265,7 @@ class CameraInstance:
         self.camera_id = camera_id
         self.rtsp_stream = None
         self.stop_event = asyncio.Event()
-        if config_data["cameras"][camera_id]["nomedia"] is False:
+        if cam_cfg[camera_id].nomedia is False:
             self.rtsp_stream = VideoStream(rtsp_url)
             bot.rtsp_streams.append(self.rtsp_stream)
 
@@ -278,10 +284,10 @@ class CameraInstance:
         SUBSCRIPTION_TIME = timedelta(minutes=10)
         WAIT_TIME = timedelta(seconds=30)
         mycam = onvif.ONVIFCamera(
-            config_data["cameras"][self.camera_id]["camera_ip"],
-            config_data["cameras"][self.camera_id]["camera_onvif_port"],
-            config_data["cameras"][self.camera_id]["username"],
-            config_data["cameras"][self.camera_id]["password"],
+            cam_cfg[self.camera_id].camera_ip,
+            cam_cfg[self.camera_id].camera_onvif_port,
+            cam_cfg[self.camera_id].username,
+            cam_cfg[self.camera_id].password,
             f"{path.dirname(onvif.__file__)}/wsdl/",
         )
         await mycam.update_xaddrs()
@@ -345,25 +351,25 @@ async def main():
     camera_instances = {}
     tasks = []
 
-    for bot in config_data["bots"]:
+    for bot in bot_cfg:
         if bot == "telegram":
             bot_instance = TelegramBot(
-                config_data["bots"][bot]["token"],
-                config_data["bots"][bot]["channel_id"],
+                bot_cfg[bot].token,
+                bot_cfg[bot].channel_id,
             )
         elif bot == "slack":
             bot_instance = SlackBot(
-                config_data["bots"][bot]["token"],
-                config_data["bots"][bot]["channel_id"],
+                bot_cfg[bot].token,
+                bot_cfg[bot].channel_id,
             )
         bots[bot] = bot_instance
         tasks.append(asyncio.create_task(bot_instance.run()))
 
-    for camera_name, camera_config in config_data["cameras"].items():
-        rtsp_url = f"""rtsp://{camera_config['username']}:{
-            quote(camera_config['password'])}@{camera_config['camera_ip']}:554/stream1"""
-        if camera_config["bot"] in bots:
-            bot_instance = bots[camera_config["bot"]]
+    for camera_name, camera_config in cam_cfg.items():
+        rtsp_url = f"""rtsp://{camera_config.username}:{
+            quote(camera_config.password)}@{camera_config.camera_ip}:554/stream1"""
+        if camera_config.bot in bots:
+            bot_instance = bots[camera_config.bot]
             cam_instance = CameraInstance(bot_instance, camera_name, rtsp_url)
             camera_instances[camera_name] = cam_instance
             tasks.append(asyncio.create_task(cam_instance.run()))
@@ -379,17 +385,56 @@ def shutdown_handler(loop):
         task.cancel()  # Cancel asyncio tasks
 
 
+class BotConfig(BaseModel):
+    token: str
+    channel_id: int
+
+
+class CameraInstanceConfig(BaseModel):
+    camera_ip: str
+    camera_onvif_port: int = Field(default=2020, ge=0, le=65535)
+    username: str
+    password: str
+    bot: str
+    nomedia: bool
+
+
 if __name__ == "__main__":
-    # Load configuration from user_data.yaml
+    # Load and validate configuration from user_data.yaml
     try:
         with open(path.join(path.dirname(__file__), "user_data.yaml")) as file:
             config_data = yaml.safe_load(file)
+        logging.info("Validating configuration...")
+        bot_cfg = {
+            name: BotConfig(**group_data)
+            for name, group_data in config_data["bots"].items()
+        }
+        if not bot_cfg:
+            logging.error("No bot configurations found in 'user_data.yaml'")
+            exit(1)
+
+        for camera_name, user_data in config_data["cameras"].items():
+            if user_data["bot"] not in bot_cfg:
+                logging.error(
+                    f"Camera '{camera_name}' has an invalid bot configuration"
+                )
+                exit(1)
+        cam_cfg = {
+            name: CameraInstanceConfig(**camera_data)
+            for name, camera_data in config_data["cameras"].items()
+        }
+        logging.info(
+            f"""Configuration validated successfully for {len(cam_cfg)} cameras and {
+                len(bot_cfg)} bots."""
+        )
+
     except FileNotFoundError:
         print(
             """Error: 'user_data.yaml' file not found. Please refer to the 
             README for configuration instructions."""
         )
         exit(1)
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
