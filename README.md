@@ -40,7 +40,7 @@ docker compose up -d
 
 - Motion Detection: Responds to ONVIF-compatible motion events from IP cameras.
 - RTSP Stream Integration: Captures video feeds and prepares clips for transmission.
-- Multi-platform Support: Sends notifications and videos through Telegram or Slack bots.
+- Sends notifications and videos through Telegram bots.
 
 ## Use Cases
 
@@ -48,9 +48,9 @@ docker compose up -d
 - Real-time alerts for surveillance.
 - Smart image and video notifications via messaging apps—no subscriptions required.
 
-## How to Create a Telegram or Slack Bot
+## How to Create a Telegram Bot
 
-Creating a bot for Telegram or Slack is simple and well-documented. Follow the official guides below:
+Creating a bot for Telegram is simple and well-documented. Follow the official guide below:
 
 - **Telegram Bot**: Visit the [Telegram Bot API Documentation](https://core.telegram.org/bots#botfather) to learn how to create and manage your bot using BotFather.
 
@@ -58,13 +58,6 @@ Creating a bot for Telegram or Slack is simple and well-documented. Follow the o
   >
   > `/grabimage`: Captures an image from the RTSP stream and sends it to the Telegram channel.  
   > `/grabvideo`: Captures a video from the RTSP stream and sends it to the Telegram channel.
-
-- **Slack Bot**: Check out the [Slack API Documentation](https://api.slack.com/start/building) for a step-by-step guide on setting up a Slack bot and integrating it into your workspace.
-
-  > **Required Slack OAuth Permissions:**
-  >
-  > `chat:write`: Allows the bot to send messages in channels or DMs.  
-  > `files:write`: Enables the bot to upload and share files.
 
 ## Configuration Example
 
@@ -80,21 +73,11 @@ cameras:
     camera_onvif_port: camera_onvif_port
     nomedia: False # If true, only alert will be sent, no video
     bot: "telegram" # Bot name must match with one of the bots in "bots" below
-  TPLink_C320WS_slack: # Camera name
-    username: "camera_username"
-    password: "camera_password"
-    camera_ip: "camera_ip_address"
-    camera_onvif_port: camera_onvif_port
-    nomedia: False # If true, only alert will be sent, no video
-    bot: "slack" # Bot name must match with one of the bots in "bots" below
 
 bots:
   telegram:
     token: "telegram_bot_token"
     channel_id: "telegram_channel_id"
-  #slack:
-  #  token: "xoxb-********"  # Bot User OAuth Token
-  #  channel_id: "channel_id"
 ```
 
 ## Screenshots

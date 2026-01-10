@@ -16,45 +16,24 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 import logging
-from slack_sdk.web.async_client import AsyncWebClient
 import yaml
 from pydantic import BaseModel, Field
-
-bot_cfg = {}
-cam_cfg = {}
+from typing import Union, Dict
 
 
-class SlackBot:
-    def __init__(self, token: str, slack_channel_id: str):
-        self.token = token
-        self.slack_channel_id = slack_channel_id
-        self.rtsp_streams = []
-        self.slack_bot = AsyncWebClient(token=token)
+class BotConfig(BaseModel):
+    token: str
+    channel_id: Union[int, str]
 
-    async def send_message(self, text: str):
-        await self.slack_bot.chat_postMessage(channel=self.slack_channel_id, text=text)
 
-    async def send_video(self, video: BytesIO):
-        await self.upload_file(file=video, title="Video")
-
-    async def send_photo(self, photo: BytesIO):
-        await self.upload_file(file=photo, title="Photo")
-
-    async def upload_file(self, file: BytesIO, title: str):
-        await self.slack_bot.files_upload_v2(
-            channel=self.slack_channel_id, file=file, title=title
-        )
-
-    async def run(self):
-        bot_name = await self.slack_bot.auth_test()
-        logging.info("Slack bot name: " + bot_name["user"])
-        await self.slack_bot.chat_postMessage(
-            channel=self.slack_channel_id, text="Starting python node"
-        )
-
-    async def stop(self):
-        pass
-
+class CameraInstanceConfig(BaseModel):
+    camera_ip: str
+    camera_onvif_port: int = Field(default=2020, ge=0, le=65535)
+    username: str
+    password: str
+    bot: str
+    nomedia: bool
+    recording_duration: int = 10
 
 class TelegramBot:
     def __init__(self, token: str, telegram_channel_id: int):
@@ -116,7 +95,7 @@ class TelegramBot:
 
 
 class VideoStream:
-    def __init__(self, rtsp_url: str):
+    def __init__(self, rtsp_url: str, duration: int = 10):
         """
         Initialize the VideoStream instance.
 
@@ -134,6 +113,7 @@ class VideoStream:
         self.ostream = None
         self.in_stream = None
         self.rtsp_url = rtsp_url
+        self.duration = duration
         self.video_in_progress = False
         self.stop_event = threading.Event()
         self.video_thread = threading.Thread(
@@ -214,7 +194,7 @@ class VideoStream:
             return  # Do not start a new video capture if one is already in progress
         # FIXME: Wait to record post-trigger video, should be calculated dynamically from FPS
         self.video_in_progress = True
-        await asyncio.sleep(10)
+        await asyncio.sleep(self.duration)
         video_file = BytesIO()
         video_output = av.open(video_file, mode="w", format="mp4")
         ostream = video_output.add_stream_from_template(
@@ -253,7 +233,7 @@ class VideoStream:
 
 
 class CameraInstance:
-    def __init__(self, bot, camera_id: int, rtsp_url: str):
+    def __init__(self, bot, config: CameraInstanceConfig, camera_id: str, rtsp_url: str):
         """
         Initialize the CameraInstance.
 
@@ -263,10 +243,11 @@ class CameraInstance:
         """
         self.bot = bot
         self.camera_id = camera_id
+        self.config = config
         self.rtsp_stream = None
         self.stop_event = asyncio.Event()
-        if cam_cfg[camera_id].nomedia is False:
-            self.rtsp_stream = VideoStream(rtsp_url)
+        if self.config.nomedia is False:
+            self.rtsp_stream = VideoStream(rtsp_url, self.config.recording_duration)
             bot.rtsp_streams.append(self.rtsp_stream)
 
     def subscription_lost(self):
@@ -284,10 +265,10 @@ class CameraInstance:
         SUBSCRIPTION_TIME = timedelta(minutes=10)
         WAIT_TIME = timedelta(seconds=30)
         mycam = onvif.ONVIFCamera(
-            cam_cfg[self.camera_id].camera_ip,
-            cam_cfg[self.camera_id].camera_onvif_port,
-            cam_cfg[self.camera_id].username,
-            cam_cfg[self.camera_id].password,
+            self.config.camera_ip,
+            self.config.camera_onvif_port,
+            self.config.username,
+            self.config.password,
             f"{path.dirname(onvif.__file__)}/wsdl/",
         )
         await mycam.update_xaddrs()
@@ -335,7 +316,7 @@ class CameraInstance:
                 logging.info(f"Exception {e} occurred. Retrying..")
 
 
-async def main():
+async def main(bot_cfg: Dict[str, BotConfig], cam_cfg: Dict[str, CameraInstanceConfig]):
     """
     Main function to initialize and run the bot and camera instances.
 
@@ -357,20 +338,15 @@ async def main():
                 bot_cfg[bot].token,
                 bot_cfg[bot].channel_id,
             )
-        elif bot == "slack":
-            bot_instance = SlackBot(
-                bot_cfg[bot].token,
-                bot_cfg[bot].channel_id,
-            )
-        bots[bot] = bot_instance
-        tasks.append(asyncio.create_task(bot_instance.run()))
+            bots[bot] = bot_instance
+            tasks.append(asyncio.create_task(bot_instance.run()))
 
     for camera_name, camera_config in cam_cfg.items():
         rtsp_url = f"""rtsp://{camera_config.username}:{
             quote(camera_config.password)}@{camera_config.camera_ip}:554/stream1"""
         if camera_config.bot in bots:
             bot_instance = bots[camera_config.bot]
-            cam_instance = CameraInstance(bot_instance, camera_name, rtsp_url)
+            cam_instance = CameraInstance(bot_instance, camera_config, camera_name, rtsp_url)
             camera_instances[camera_name] = cam_instance
             tasks.append(asyncio.create_task(cam_instance.run()))
     try:
@@ -383,20 +359,6 @@ def shutdown_handler(loop):
     print("\nShutting down gracefully...")
     for task in asyncio.all_tasks(loop):
         task.cancel()  # Cancel asyncio tasks
-
-
-class BotConfig(BaseModel):
-    token: str
-    channel_id: int
-
-
-class CameraInstanceConfig(BaseModel):
-    camera_ip: str
-    camera_onvif_port: int = Field(default=2020, ge=0, le=65535)
-    username: str
-    password: str
-    bot: str
-    nomedia: bool
 
 
 if __name__ == "__main__":
@@ -442,7 +404,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, lambda sig, frame: shutdown_handler(loop))
 
     try:
-        loop.run_until_complete(main())
+        loop.run_until_complete(main(bot_cfg, cam_cfg))
     except asyncio.CancelledError:
         pass
     finally:
