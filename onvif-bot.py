@@ -41,11 +41,14 @@ class TelegramBot:
         self.token = token
         self.telegram_channel_id = telegram_channel_id
         self.rtsp_streams = []
+        self.alert_enabled = True
         self.telegram_bot = Application.builder().token(token).build()
         self.telegram_bot.add_handler(
             CommandHandler("grabimage", self.grabimage))
         self.telegram_bot.add_handler(
             CommandHandler("grabvideo", self.grabvideo))
+        self.telegram_bot.add_handler(
+            CommandHandler("privacy", self.privacy))
 
     async def grabimage(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -62,6 +65,24 @@ class TelegramBot:
             video = await stream.video_snapshot()
             if video is not None:
                 await self.send_video(video)
+
+    async def privacy(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        if not context.args:
+            status = "ON" if not self.alert_enabled else "OFF"
+            await update.message.reply_text(
+                f"Privacy mode is {status}. Use '/privacy on' or '/privacy off'."
+            )
+            return
+
+        arg = context.args[0].lower()
+        if arg == "on":
+            self.alert_enabled = False
+            await update.message.reply_text("Privacy mode enabled. Alerts disabled.")
+        elif arg == "off":
+            self.alert_enabled = True
+            await update.message.reply_text("Privacy mode disabled. Alerts enabled.")
 
     async def send_message(self, text: str):
         bot = self.telegram_bot.bot
@@ -297,6 +318,9 @@ class CameraInstance:
                 for cur_message in messages.NotificationMessage:
                     mess_tree = cur_message.Message._value_1.Data.SimpleItem[0].Value
                 if mess_tree == "true":
+                    if not self.bot.alert_enabled:
+                        logging.info(f"Motion detected on {self.camera_id} but privacy is ON.")
+                        continue
                     await self.bot.send_message(
                         f"""Motion detected on camera {self.camera_id} at {
                             time.strftime('%Y-%m-%d %H:%M:%S')}"""

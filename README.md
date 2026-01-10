@@ -58,6 +58,7 @@ Creating a bot for Telegram is simple and well-documented. Follow the official g
   >
   > `/grabimage`: Captures an image from the RTSP stream and sends it to the Telegram channel.  
   > `/grabvideo`: Captures a video from the RTSP stream and sends it to the Telegram channel.
+  > `/privacy [on|off]`: Enables or disables detection alerts.
 
 ## Configuration Example
 
